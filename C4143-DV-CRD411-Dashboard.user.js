@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         C4143 CRDv4.1.1 Qual Test Status Dashboard
 // @namespace    local.ado.dvscale.dashboard
-// @version      1.11.5
+// @version      1.11.6
 // @description  Adds a multi-project Query selector, real Test Results, XLSX exports, query-scoped snapshots, and Extension support.
 // @homepageURL  https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual
 // @supportURL   https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual/issues
@@ -610,6 +610,24 @@
     cases.forEach(function (c) { (c.bugs || []).forEach(function (bug) { if (!seen[bug.id]) { seen[bug.id] = 1; bugs.push(bug); } }); });
     return bugs;
   };
+  D.uniqueCases = function (cases) {
+    var seen = {}, unique = [];
+    (cases || []).forEach(function (testCase) {
+      if (!testCase || testCase.id == null) return;
+      var key = String(testCase.id);
+      if (!seen[key]) { seen[key] = 1; unique.push(testCase); }
+    });
+    return unique;
+  };
+  D.affectedCases = function (cases) {
+    var seen = {}, affected = [];
+    (cases || []).forEach(function (testCase) {
+      if (!testCase || testCase.id == null || !(testCase.bugs || []).length) return;
+      var key = String(testCase.id);
+      if (!seen[key]) { seen[key] = 1; affected.push(testCase); }
+    });
+    return affected;
+  };
   D.rate = function (count, total) {
     if (!count || !total) return '0%';
     var percentage = Math.min(100, Math.max(0, count * 100 / total));
@@ -1108,7 +1126,7 @@
   D.box = function (title) { var b = D.el('div', 'box'); if (title) b.appendChild(D.el('h3', null, title)); return b; };
   D.bugTable = function (cases) {
     var grouped = {};
-    cases.forEach(function (testCase) {
+    D.uniqueCases(cases).forEach(function (testCase) {
       (testCase.bugs || []).forEach(function (bug) {
         if (!grouped[bug.id]) grouped[bug.id] = { bug: bug, cases: [] };
         grouped[bug.id].cases.push(testCase);
@@ -1646,10 +1664,11 @@
     D.S.racks.forEach(function (r) {
       allCases = allCases.concat(D.collect(r, 'Test Case'));
     });
+    var uniqueAllCases = D.uniqueCases(allCases);
     D.S.panels.forEach(function (p) {
       if (p.kind === 'ov') {
-        var f = allCases.filter(D.inRange);
-        var bugCases = allCases.filter(function (c) { return (c.bugs || []).length > 0; });
+        var f = uniqueAllCases.filter(D.inRange);
+        var bugCases = D.affectedCases(allCases);
         var linkedBugs = D.uniqueBugs(allCases);
         var pointCounts = D.isTestPlanSource() ? D.allPointStateCounts() : null;
         var pointTotal = pointCounts ? D.sum(pointCounts) : 0;
@@ -1658,7 +1677,7 @@
           inProgress: pointCounts['Not run'] || 0,
           passRate: D.rate(pointCounts.Passed || 0, pointTotal), failRate: D.rate(pointCounts.Failed || 0, pointTotal)
         } : D.outcomeSummary(f);
-        p.cCase._val.textContent = pointCounts ? pointTotal : allCases.length;
+        p.cCase._val.textContent = pointCounts ? pointTotal : uniqueAllCases.length;
         p.cPass._val.textContent = D.outcomeValue(outcomes.pass, outcomes.passRate);
         p.cFail._val.textContent = D.outcomeValue(outcomes.fail, outcomes.failRate);
         p.cProgress._val.textContent = outcomes.inProgress;
@@ -1666,8 +1685,8 @@
         p.tableBox.innerHTML = ''; p.tableBox.appendChild(D.rackTable());
         p.priorityBox.innerHTML = ''; p.priorityBox.appendChild(D.priorityCompletionChart(f));
         p.metricBox.innerHTML = ''; p.metricBox.appendChild(D.metricInventoryPanel(f));
-        p.bugStatsBox.innerHTML = ''; p.bugStatsBox.appendChild(D.bugStats(allCases));
-        p.bugBox.innerHTML = ''; p.bugBox.appendChild(D.bugTable(allCases));
+        p.bugStatsBox.innerHTML = ''; p.bugStatsBox.appendChild(D.bugStats(uniqueAllCases));
+        p.bugBox.innerHTML = ''; p.bugBox.appendChild(D.bugTable(uniqueAllCases));
         var counts = pointCounts || D.countStates(f);
         D.drawInto(p.chartHost, counts);
         p.legendHost.innerHTML = ''; p.legendHost.appendChild(D.legend(counts));
@@ -1701,7 +1720,7 @@
     if (!tf && allCases.length) {
       D.setStatus(src + ': loaded ' + allCases.length + ' test cases, but nothing was updated within "' + rl + '" — charts are empty. Latest change: ' + D.fmt(D.latest(allCases)) + '.' + bugNote + metricNote + testNote, 'warn');
     } else if (D.S.racks.length) {
-      D.setStatus(src + ': ' + D.S.racks.length + ' ' + D.groupPlural().toLowerCase() + ', ' + (D.isTestPlanSource() ? D.sum(D.allPointStateCounts()) + ' test points / ' : '') + allCases.length + ' unique test cases, ' + totalLinkedBugs + ' linked Bugs; "' + rl + '" contains ' + tf + ' updated items.' + bugNote + metricNote + testNote, (D.S.bugLinkWarning || D.S.metricFieldWarning || testNote) ? 'warn' : 'info');
+      D.setStatus(src + ': ' + D.S.racks.length + ' ' + D.groupPlural().toLowerCase() + ', ' + (D.isTestPlanSource() ? D.sum(D.allPointStateCounts()) + ' test points / ' : '') + uniqueAllCases.length + ' unique test cases, ' + totalLinkedBugs + ' linked Bugs; "' + rl + '" contains ' + tf + ' updated items.' + bugNote + metricNote + testNote, (D.S.bugLinkWarning || D.S.metricFieldWarning || testNote) ? 'warn' : 'info');
     }
   };
   D.load = async function () {
