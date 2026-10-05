@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         C4143 DV-SIT Test Status Dashboard
+// @name         C4143 CRDv4.1.1 Qual Test Status Dashboard
 // @namespace    local.ado.dvscale.dashboard
-// @version      1.10.9
+// @version      1.11.5
 // @description  Adds a multi-project Query selector, real Test Results, XLSX exports, query-scoped snapshots, and Extension support.
 // @homepageURL  https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual
 // @supportURL   https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual/issues
@@ -14,8 +14,8 @@
 
 /* ------------------------------------------------------------------
  How to use
-  1) Install Tampermonkey, import this file, then open the dedicated DV-SIT entry:
-     https://azurecsi.visualstudio.com/_apis/projects?api-version=6.0#dvdash
+  1) Install Tampermonkey, import this file, then open the dedicated CRDv4.1.1 Qual entry:
+     https://azurecsi.visualstudio.com/_apis/projects?api-version=6.0#crdv411qual
     Every open or F5 refresh re-runs the query and redraws the dashboard.
 
  2) Data source modes (dropdown at the top left; your choice is saved in localStorage):
@@ -54,20 +54,20 @@
 (function () {
   "use strict";
   var extensionContext = window.__C4143_EXTENSION__ || null;
-  var isDashboardEntry = !!extensionContext || location.hash.toLowerCase() === "#dvdash";
+  var isDashboardEntry = !!extensionContext || location.hash.toLowerCase().indexOf("crdv411qual") >= 0;
   if (!isDashboardEntry) return;
   var D = {};
-  D.CFG = {"org":"https://azurecsi.visualstudio.com","orgName":"azurecsi","project":"Dev","sourceType":"testPlan","planId":3823389,"suiteId":3823390,"queryId":"","queryUrl":"https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=3823389&suiteId=3823390","testResultDays":28};
+  D.CFG = {"org":"https://azurecsi.visualstudio.com","orgName":"azurecsi","project":"Dev","sourceType":"testPlan","planId":2783433,"suiteId":4066218,"queryId":"","queryUrl":"https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=2783433&suiteId=4066218","testResultDays":28};
   if (extensionContext) {
     D.CFG.org = String(extensionContext.org || D.CFG.org).replace(/\/+$/, '');
     D.CFG.orgName = extensionContext.orgName || D.CFG.orgName;
     D.CFG.project = extensionContext.project || D.CFG.project;
     D.CFG.queryUrl = D.CFG.orgName === 'azurecsi' && D.CFG.project === 'Dev'
-      ? 'https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=3823389&suiteId=3823390'
+      ? 'https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=2783433&suiteId=4066218'
       : D.CFG.org + '/' + encodeURIComponent(D.CFG.project) + '/_queries/query/' + D.CFG.queryId + '/';
   }
   D.DEFAULT_QUERIES = [
-    { name: 'C4143_DV-SIT', org: 'https://azurecsi.visualstudio.com', orgName: 'azurecsi', project: 'Dev', sourceType: 'testPlan', planId: 3823389, suiteId: 3823390, queryId: '', queryUrl: 'https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=3823389&suiteId=3823390', builtin: true },
+    { name: 'C4143_CRDv4.1.1 Qual', org: 'https://azurecsi.visualstudio.com', orgName: 'azurecsi', project: 'Dev', sourceType: 'testPlan', planId: 2783433, suiteId: 4066218, queryId: '', queryUrl: 'https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=2783433&suiteId=4066218', builtin: true },
     { name: '[EchoFalls][C4142][PSE] EVT - Scale Testing', org: 'https://azurecsi.visualstudio.com', orgName: 'azurecsi', project: 'Dev', queryId: '6e06c765-2ff5-43c4-80c6-e78438eea6d9', queryUrl: 'https://azurecsi.visualstudio.com/Dev/_queries/query/6e06c765-2ff5-43c4-80c6-e78438eea6d9/', builtin: true }
   ];
   D.STATE_COLORS = {"Not Started":"#94a3b8","New":"#60a5fa","Proposed":"#f5b544","Design":"#a78bfa","In Progress":"#818cf8","Active":"#818cf8","Ready":"#38bdf8","Committed":"#22d3ee","Passed":"#34d399","Closed":"#2dd4bf","Done":"#2dd4bf","Completed":"#2dd4bf","Failed":"#f87171","Blocked":"#fb7185","Removed":"#9ca3af","Resolved":"#22d3ee","Paused":"#fbbf24"};
@@ -96,8 +96,8 @@
     return (D.S.queries || []).filter(function (query) { return D.queryKey(query) === key; })[0] || Object.assign({ name: 'Azure DevOps Query' }, D.CFG);
   };
   D.isTestPlanSource = function () { return D.CFG.sourceType === 'testPlan'; };
-  D.groupSingular = function () { return D.isTestPlanSource() ? 'Config' : 'Rack'; };
-  D.groupPlural = function () { return D.isTestPlanSource() ? 'Configs' : 'Racks'; };
+  D.groupSingular = function () { return D.isTestPlanSource() ? 'Test Suite' : 'Rack'; };
+  D.groupPlural = function () { return D.isTestPlanSource() ? 'Test Suites' : 'Racks'; };
   D.primaryGroupName = function () { return (D.S.racks[0] && D.S.racks[0].label) || D.groupSingular(); };
   D.parseQueryUrl = function (value, name) {
     var parsed;
@@ -254,21 +254,31 @@
     if (D.CFG.sourceType === 'testPlan') {
       var planPath = base + '/' + encodeURIComponent(D.CFG.project) + '/_apis/testplan/Plans/' + encodeURIComponent(D.CFG.planId);
       var suiteTreeResponse = await D.apiFetch(planPath + '/suites?asTreeView=true&api-version=7.1');
-      var configRank = { LM: 1, MM: 2, HH: 3 }, configMap = {};
-      function findConfigRoots(suite, insideConfig) {
+      var suiteById = {}, parentById = {}, suiteContainers = [];
+      function indexSuite(suite, parent) {
         if (!suite) return;
-        var match = /\b(LM|MM|HH)\b/i.exec(suite.name || '');
-        var isConfigRoot = !!match && !insideConfig;
-        if (isConfigRoot) {
-          var code = match[1].toUpperCase();
-          if (!configMap[code]) configMap[code] = suite;
-        }
-        (suite.children || []).forEach(function (child) { findConfigRoots(child, insideConfig || isConfigRoot); });
+        suiteById[String(suite.id)] = suite;
+        if (parent) parentById[String(suite.id)] = parent;
+        if ((suite.children || []).length) suiteContainers.push(suite);
+        (suite.children || []).forEach(function (child) { indexSuite(child, suite); });
       }
-      (suiteTreeResponse.value || []).forEach(function (suite) { findConfigRoots(suite, false); });
-      var missingConfigs = ['LM', 'MM', 'HH'].filter(function (code) { return !configMap[code]; });
-      if (missingConfigs.length) throw new Error('Test Plan suite tree is missing Config suites: ' + missingConfigs.join(', '));
-      var configSuites = ['LM', 'MM', 'HH'].map(function (code) { return configMap[code]; });
+      var suiteRoots = suiteTreeResponse.value || [];
+      suiteRoots.forEach(function (suite) { indexSuite(suite, null); });
+      var selectedSuite = suiteById[String(D.CFG.suiteId)] || null;
+      var selectedParent = selectedSuite && parentById[String(selectedSuite.id)];
+      var configSuites = [];
+      if (selectedSuite && (selectedSuite.children || []).length === 6) {
+        configSuites = selectedSuite.children.slice();
+      } else if (selectedParent && (selectedParent.children || []).length === 6) {
+        configSuites = selectedParent.children.slice();
+      } else {
+        var sixSuiteContainer = suiteContainers.filter(function (suite) { return (suite.children || []).length === 6; })[0] || null;
+        if (sixSuiteContainer) configSuites = sixSuiteContainer.children.slice();
+        else if (suiteRoots.length === 6) configSuites = suiteRoots.slice();
+      }
+      if (configSuites.length !== 6) {
+        throw new Error('Expected 6 Test Suites in the selected Test Plan branch, but found ' + configSuites.length + '.');
+      }
       suiteGroups = {};
       function normalizePointOutcome(value) {
         var key = String(value || 'none').replace(/[\s_-]+/g, '').toLowerCase();
@@ -285,7 +295,7 @@
         if (!seen[caseId]) { seen[caseId] = 1; ids.push(caseId); }
         var suiteKey = String(configSuite.id);
         var group = suiteGroups[suiteKey] || (suiteGroups[suiteKey] = {
-          id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: {}, suiteCount: 0
+          id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: {}, suiteCount: 0, order: 999
         });
         if (!group.seen[caseId]) { group.seen[caseId] = 1; group.ids.push(caseId); }
         if (!group.pointSeen[pointId]) {
@@ -305,7 +315,7 @@
         configSuites.forEach(function (configSuite) {
           var branch = suiteBranch(configSuite);
           suiteGroups[String(configSuite.id)] = {
-            id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: {}, suiteCount: branch.length
+            id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: {}, suiteCount: branch.length, order: configSuites.indexOf(configSuite) + 1
           };
           branch.forEach(function (suite) { pointTasks.push({ configSuite: configSuite, suite: suite }); });
         });
@@ -322,7 +332,7 @@
         var fallbackSuite = { id: D.CFG.suiteId, name: 'Test Suite ' + D.CFG.suiteId };
         (fallbackPoints.value || []).forEach(function (point) { addTestPoint(point, fallbackSuite); });
       }
-      if (!ids.length) throw new Error('The selected LM / MM / HH Config suites contain no readable Test Cases.');
+      if (!ids.length) throw new Error('The selected six Test Suites contain no readable Test Cases.');
     } else {
       var wiql = await D.apiFetch(base + '/' + encodeURIComponent(D.CFG.project) + '/_apis/wit/wiql/' + D.CFG.queryId + '?api-version=6.0&$top=5000');
       rels = wiql.workItemRelations || [];
@@ -419,15 +429,13 @@
     }
     var racks;
     if (suiteGroups) {
-      var configOrder = { LM: 1, MM: 2, HH: 3 };
       racks = Object.keys(suiteGroups).map(function (key) {
-        var group = suiteGroups[key], match = /\b(LM|MM|HH)\b/i.exec(group.name || '');
-        var code = match ? match[1].toUpperCase() : '', label = code ? (code + ' Config') : group.name;
+        var group = suiteGroups[key], label = group.name || ('Test Suite ' + group.id);
         return {
           id: 'suite-' + group.id, suiteId: group.id, type: 'Feature', title: group.name, state: '?', tags: '', changed: null, assigned: '',
           metrics: {}, suiteFields: {}, bugs: [], children: group.ids.map(build),
           testPoints: group.points || [], pointSummary: group.pointSummary || {}, suiteCount: group.suiteCount || 0,
-          num: configOrder[code] || 99, label: label,
+          num: group.order || 99, label: label,
           url: D.CFG.org + '/' + encodeURIComponent(D.CFG.project) + '/_testPlans/charts?planId=' + encodeURIComponent(D.CFG.planId) + '&suiteId=' + encodeURIComponent(group.id)
         };
       });
@@ -873,6 +881,15 @@
     return s;
   };
   D.stacked = function (labels, perRack, states) {
+    function shortSuiteLabel(label, index) {
+      var parts = String(label || '').split(/[_\s-]+/).filter(Boolean);
+      var config = parts.filter(function (part) { return /^(LM|MM|HH)$/i.test(part); })[0];
+      var variant = parts.filter(function (part) { return /^(GN|AC)$/i.test(part); })[0];
+      var fallbackConfigs = ['LM', 'LM', 'MM', 'MM', 'HH', 'HH'];
+      config = String(config || fallbackConfigs[index] || ('S' + (index + 1))).toUpperCase();
+      variant = String(variant || (index % 2 ? 'AC' : 'GN')).toUpperCase();
+      return config + ' ' + variant;
+    }
     var W = 460, H = 300, L = 40, B = 40, T = 14, Rp = 12;
     var s = D.svg('svg', { viewBox: '0 0 ' + W + ' ' + H, width: '100%', height: '100%', preserveAspectRatio: 'xMidYMid meet' });
     var totals = perRack.map(function (m) { return D.sum(m); });
@@ -896,7 +913,9 @@
       });
       var tv = D.svg('text', { x: x + bw / 2, y: T + ph - ph * totals[i] / max - 5, fill: '#e2e8f0', 'text-anchor': 'middle', 'font-size': '11', 'font-weight': '700' });
       tv.textContent = totals[i] || ''; s.appendChild(tv);
-      var lt = D.svg('text', { x: x + bw / 2, y: T + ph + 16, fill: '#9fb3d0', 'text-anchor': 'middle', 'font-size': '10' }); lt.textContent = lab; s.appendChild(lt);
+      var lt = D.svg('text', { x: x + bw / 2, y: T + ph + 16, fill: '#9fb3d0', 'text-anchor': 'middle', 'font-size': '10', 'aria-label': lab });
+      lt.textContent = shortSuiteLabel(lab, i);
+      var labelTitle = D.svg('title'); labelTitle.textContent = lab; lt.appendChild(labelTitle); s.appendChild(lt);
     });
     return s;
   };
