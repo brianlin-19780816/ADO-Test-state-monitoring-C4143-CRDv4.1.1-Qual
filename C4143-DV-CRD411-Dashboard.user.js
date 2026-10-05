@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         C4143 CRDv4.1.1 Qual Test Status Dashboard
 // @namespace    local.ado.dvscale.dashboard
-// @version      1.11.6
+// @version      1.11.7
 // @description  Adds a multi-project Query selector, real Test Results, XLSX exports, query-scoped snapshots, and Extension support.
 // @homepageURL  https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual
 // @supportURL   https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual/issues
@@ -1588,12 +1588,10 @@
         refs.cPass = D.card(D.isTestPlanSource() ? 'PASSED POINTS / RATE' : 'PASS CASES / RATE', '-', '#2dd4bf');
         refs.cFail = D.card(D.isTestPlanSource() ? 'FAILED POINTS / RATE' : 'FAIL CASES (BLOCKED) / RATE', '-', '#fb7185');
         refs.cProgress = D.card(D.isTestPlanSource() ? 'NOT RUN POINTS' : 'IN PROGRESS CASES', 0, '#818cf8');
-        refs.cBugs = D.card('BUGS / AFFECTED CASES', '-', '#fb923c');
         refs.cPass.title = D.isTestPlanSource() ? 'Passed Test Points reported by Azure Test Plans.' : 'Closed Test Cases are counted as Pass. Rate denominator: Test Cases in the selected time range.';
         refs.cFail.title = D.isTestPlanSource() ? 'Failed Test Points reported by Azure Test Plans.' : 'Blocked Test Cases are counted as Fail. Rate denominator: Test Cases in the selected time range.';
         refs.cProgress.title = D.isTestPlanSource() ? 'Test Points whose outcome is Not run.' : 'Test Cases whose current Azure DevOps State is In Progress.';
-        refs.cBugs.title = 'Unique linked Bugs / Test Cases affected by at least one linked Bug.';
-        [refs.cRacks, refs.cCase, refs.cPass, refs.cFail, refs.cProgress, refs.cBugs].forEach(function (c) { cards.appendChild(c); });
+        [refs.cRacks, refs.cCase, refs.cPass, refs.cFail, refs.cProgress].forEach(function (c) { cards.appendChild(c); });
         var stickyTop = D.el('div', 'panel-sticky'); stickyTop.appendChild(cards); panel.appendChild(stickyTop);
         var grid = D.el('div', 'grid');
         var b1 = D.box((D.isTestPlanSource() ? 'Test Point outcome distribution — all ' : 'Test Case state distribution — all ') + D.groupPlural());
@@ -1668,8 +1666,6 @@
     D.S.panels.forEach(function (p) {
       if (p.kind === 'ov') {
         var f = uniqueAllCases.filter(D.inRange);
-        var bugCases = D.affectedCases(allCases);
-        var linkedBugs = D.uniqueBugs(allCases);
         var pointCounts = D.isTestPlanSource() ? D.allPointStateCounts() : null;
         var pointTotal = pointCounts ? D.sum(pointCounts) : 0;
         var outcomes = pointCounts ? {
@@ -1681,7 +1677,6 @@
         p.cPass._val.textContent = D.outcomeValue(outcomes.pass, outcomes.passRate);
         p.cFail._val.textContent = D.outcomeValue(outcomes.fail, outcomes.failRate);
         p.cProgress._val.textContent = outcomes.inProgress;
-        p.cBugs._val.textContent = linkedBugs.length + ' / ' + bugCases.length;
         p.tableBox.innerHTML = ''; p.tableBox.appendChild(D.rackTable());
         p.priorityBox.innerHTML = ''; p.priorityBox.appendChild(D.priorityCompletionChart(f));
         p.metricBox.innerHTML = ''; p.metricBox.appendChild(D.metricInventoryPanel(f));
