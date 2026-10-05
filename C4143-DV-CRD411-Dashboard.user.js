@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         C4143 CRDv4.1.1 Qual Test Status Dashboard
 // @namespace    local.ado.dvscale.dashboard
-// @version      1.11.7
+// @version      1.11.8
 // @description  Adds a multi-project Query selector, real Test Results, XLSX exports, query-scoped snapshots, and Extension support.
 // @homepageURL  https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual
 // @supportURL   https://github.com/brianlin-19780816/ADO-Test-state-monitoring-C4143-CRDv4.1.1-Qual/issues
@@ -57,6 +57,7 @@
   var isDashboardEntry = !!extensionContext || location.hash.toLowerCase().indexOf("crdv411qual") >= 0;
   if (!isDashboardEntry) return;
   var D = {};
+  D.VERSION = '1.11.8';
   D.CFG = {"org":"https://azurecsi.visualstudio.com","orgName":"azurecsi","project":"Dev","sourceType":"testPlan","planId":2783433,"suiteId":4066218,"queryId":"","queryUrl":"https://azurecsi.visualstudio.com/Dev/_testPlans/charts?planId=2783433&suiteId=4066218","testResultDays":28};
   if (extensionContext) {
     D.CFG.org = String(extensionContext.org || D.CFG.org).replace(/\/+$/, '');
@@ -281,12 +282,15 @@
       }
       suiteGroups = {};
       function normalizePointOutcome(value) {
-        var key = String(value || 'none').replace(/[\s_-]+/g, '').toLowerCase();
+        var key = String(value == null ? 'none' : value).replace(/[\s_-]+/g, '').toLowerCase();
         if (key === 'passed') return 'Passed';
-        if (key === 'failed') return 'Failed';
-        if (key === 'none' || key === 'unspecified' || key === 'notexecuted') return 'Not run';
-        if (key === 'inprogress') return 'In Progress';
-        return String(value || 'Not run');
+        if (key === 'failed' || key === 'blocked' || key === 'aborted' || key === 'error' || key === 'timeout') return 'Failed';
+        return 'Not run';
+      }
+      function pointOutcome(point) {
+        var value = point && point.outcome;
+        if (value == null || String(value).trim() === '') value = point && point.results && point.results.outcome;
+        return normalizePointOutcome(value);
       }
       function addTestPoint(point, configSuite) {
         var testCase = point.testCaseReference || point.testCase || {};
@@ -295,11 +299,11 @@
         if (!seen[caseId]) { seen[caseId] = 1; ids.push(caseId); }
         var suiteKey = String(configSuite.id);
         var group = suiteGroups[suiteKey] || (suiteGroups[suiteKey] = {
-          id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: {}, suiteCount: 0, order: 999
+          id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: { Passed: 0, Failed: 0, 'Not run': 0 }, suiteCount: 0, order: 999
         });
         if (!group.seen[caseId]) { group.seen[caseId] = 1; group.ids.push(caseId); }
         if (!group.pointSeen[pointId]) {
-          var outcome = normalizePointOutcome((point.results && point.results.outcome) || point.outcome);
+          var outcome = pointOutcome(point);
           group.pointSeen[pointId] = 1;
           group.points.push({ id: pointId, caseId: caseId, outcome: outcome, configuration: point.configuration || null, suite: point.testSuite || point.suite || null });
           group.pointSummary[outcome] = (group.pointSummary[outcome] || 0) + 1;
@@ -315,7 +319,7 @@
         configSuites.forEach(function (configSuite) {
           var branch = suiteBranch(configSuite);
           suiteGroups[String(configSuite.id)] = {
-            id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: {}, suiteCount: branch.length, order: configSuites.indexOf(configSuite) + 1
+            id: configSuite.id, name: configSuite.name, ids: [], seen: {}, points: [], pointSeen: {}, pointSummary: { Passed: 0, Failed: 0, 'Not run': 0 }, suiteCount: branch.length, order: configSuites.indexOf(configSuite) + 1
           };
           branch.forEach(function (suite) { pointTasks.push({ configSuite: configSuite, suite: suite }); });
         });
@@ -618,15 +622,6 @@
       if (!seen[key]) { seen[key] = 1; unique.push(testCase); }
     });
     return unique;
-  };
-  D.affectedCases = function (cases) {
-    var seen = {}, affected = [];
-    (cases || []).forEach(function (testCase) {
-      if (!testCase || testCase.id == null || !(testCase.bugs || []).length) return;
-      var key = String(testCase.id);
-      if (!seen[key]) { seen[key] = 1; affected.push(testCase); }
-    });
-    return affected;
   };
   D.rate = function (count, total) {
     if (!count || !total) return '0%';
@@ -1484,6 +1479,19 @@
     backdrop.addEventListener('click', function (event) { if (event.target === backdrop) backdrop.remove(); });
     renderList(); backdrop.appendChild(modal); document.body.appendChild(backdrop); urlInput.focus();
   };
+  D.removeLegacyBugAffectedCards = function () {
+    Array.prototype.slice.call(document.querySelectorAll('.cards > .card')).forEach(function (card) {
+      var label = card.querySelector('.k');
+      if (label && String(label.textContent || '').trim().toUpperCase() === 'BUGS / AFFECTED CASES') card.remove();
+    });
+  };
+  D.installLegacyCardGuard = function () {
+    D.removeLegacyBugAffectedCards();
+    if (window.__crdv411LegacyCardObserver && window.__crdv411LegacyCardObserver.disconnect) window.__crdv411LegacyCardObserver.disconnect();
+    if (!window.MutationObserver || !document.documentElement) return;
+    window.__crdv411LegacyCardObserver = new MutationObserver(D.removeLegacyBugAffectedCards);
+    window.__crdv411LegacyCardObserver.observe(document.documentElement, { childList: true, subtree: true });
+  };
   D.buildShell = function () {
     document.head.innerHTML = ''; document.body.innerHTML = '';
     document.title = D.activeQuery().name + ' — Test Status Dashboard';
@@ -1497,7 +1505,7 @@
     sub.appendChild(document.createTextNode('Source: '));
     var qa = D.el('a', null, 'Azure DevOps Query: ' + D.activeQuery().name); qa.id = 'querySource';
     qa.href = D.CFG.queryUrl; qa.target = '_blank'; qa.rel = 'noopener'; sub.appendChild(qa);
-    sub.appendChild(document.createTextNode(' ·  Every open / refresh of this page re-runs the query using the selected mode'));
+    sub.appendChild(document.createTextNode(' · Script v' + D.VERSION + ' · Every open / refresh of this page re-runs the query using the selected mode'));
     left.appendChild(sub); header.appendChild(left);
     var right = D.el('div'); right.style.display = 'flex'; right.style.gap = '8px'; right.style.alignItems = 'center'; right.style.flexWrap = 'wrap';
     var upd = D.el('span', 'sub', 'Updated: —'); upd.id = 'updated'; right.appendChild(upd);
@@ -1853,7 +1861,7 @@
       D.S.chartType = localStorage.getItem('dvdashType') || D.S.chartType || 'pie';
     } catch (e) { }
     D.loadQueryCatalog();
-    D.buildShell(); D.persistWire(); D.load();
+    D.buildShell(); D.installLegacyCardGuard(); D.persistWire(); D.load();
   };
   D.boot();
 })();
